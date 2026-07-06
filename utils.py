@@ -4,6 +4,7 @@ Keeping these free of I/O makes them trivial to unit test and keeps the
 API client and webhook processors focused on orchestration.
 """
 
+import re
 from typing import Any
 
 # Sonatype IQ expresses risk as a "policy threat level" on a 0-10 scale.
@@ -241,3 +242,34 @@ def read_include_remediation(selector: Any) -> bool:
     ``includeRemediation: true``.
     """
     return bool(getattr(selector, "include_remediation", False))
+
+
+# Matches github.com/{owner}/{repo}, both HTTPS (with or without a trailing
+# ".git") and the SSH-style "git@github.com:owner/repo.git" form. Per
+# Sonatype's docs, IQ Server normalizes any SSH URL it's given to HTTPS on
+# save, but we accept both shapes defensively rather than assume that always
+# happened before our read.
+_GITHUB_URL_PATTERN = re.compile(
+    r"github\.com[:/]+(?P<owner>[^/]+)/(?P<repo>[^/]+?)(?:\.git)?/?$"
+)
+
+
+def parse_github_owner_repo(
+    repository_url: str | None, provider: str | None
+) -> tuple[str | None, str | None]:
+    """Extract ``(owner, repo)`` from an IQ Source Control ``repositoryUrl``.
+
+    Only attempts extraction when ``provider`` is ``"github"`` — this is
+    intentionally scoped to GitHub for now since that's the only source
+    control target Port relates to today (via the ``githubRepository``
+    blueprint). GitLab/Bitbucket/Azure DevOps repos configured in IQ are left
+    unparsed rather than guessed at, so a future GitLab relation isn't
+    modeled prematurely. Returns ``(None, None)`` if the URL doesn't match the
+    expected shape (e.g. a self-hosted GitHub Enterprise domain).
+    """
+    if not repository_url or (provider or "").strip().lower() != "github":
+        return None, None
+    match = _GITHUB_URL_PATTERN.search(repository_url.strip())
+    if not match:
+        return None, None
+    return match.group("owner"), match.group("repo")

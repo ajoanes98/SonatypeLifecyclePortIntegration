@@ -15,6 +15,7 @@ from utils import (
     component_version,
     extract_report_id,
     normalize_severity,
+    parse_github_owner_repo,
     pick_remediation_versions,
     severity_from_cvss,
     severity_from_threat_level,
@@ -158,6 +159,47 @@ class SonatypeClient:
         )
         applications = response.get("applications", [])
         return applications[0] if applications else None
+
+    # ------------------------- Source Control (SCM) -------------------------- #
+
+    async def get_application_source_control(
+        self, application: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        """Fetch the Source Control Management config for one application.
+
+        Returns ``None`` when the application has no SCM configured — IQ
+        returns 404 in that case, which ``_send_api_request`` already turns
+        into ``{}`` (the same convention used for unscanned applications'
+        reports), so we treat an empty response the same way here.
+
+        Only the root organization's *access token* can be inherited; the
+        ``repositoryUrl`` itself is always application-specific (each
+        application maps to exactly one repo), so a single per-application GET
+        is sufficient — there's no org-level fallback to also check.
+        """
+        response = await self._send_api_request(
+            f"api/v2/sourceControl/application/{application['id']}"
+        )
+        if not response or not response.get("repositoryUrl"):
+            return None
+
+        # The GET response should not echo back the write-only `token` field,
+        # but strip it defensively so a credential can never end up in the
+        # catalog if a future IQ version changes that behavior.
+        response = {k: v for k, v in response.items() if k != "token"}
+
+        owner, repo = parse_github_owner_repo(
+            response.get("repositoryUrl"), response.get("provider")
+        )
+
+        return {
+            **response,
+            "__identifier": application["id"],
+            "__title": response.get("repositoryUrl")
+            or application.get("name", application["id"]),
+            "__applicationId": application["id"],
+            "__githubRepository": f"{owner}/{repo}" if owner and repo else None,
+        }
 
     # ------------------------------- Reports --------------------------------- #
 
