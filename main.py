@@ -1,3 +1,4 @@
+import asyncio
 from typing import cast
 
 from loguru import logger
@@ -133,6 +134,38 @@ async def on_resync_vulnerabilities(kind: str) -> ASYNC_GENERATOR_RESYNC_TYPE:
             data = await client.get_application_component_data(application)
             if data["vulnerabilities"]:
                 yield data["vulnerabilities"]
+
+
+@ocean.on_resync(ObjectKind.SOURCE_CONTROL)
+async def on_resync_source_control(kind: str) -> ASYNC_GENERATOR_RESYNC_TYPE:
+    """Resync each application's IQ Source Control Management configuration.
+
+    This is the authoritative link between a Sonatype application and its
+    GitHub repository (configured in IQ under Orgs and Policies -> an
+    application -> Source Control Configuration), as opposed to inferring the
+    repo from the application's publicId naming convention. Applications with
+    no SCM configured are skipped rather than yielded as empty entities.
+    """
+    client = get_sonatype_client()
+    logger.info("Starting resync of Sonatype source control configurations")
+    total = 0
+    async for applications in client.get_applications():
+        # One lightweight GET per application; concurrency is already bounded
+        # by the client's shared request semaphore, so a plain gather is safe
+        # even for a large batch.
+        results = await asyncio.gather(
+            *[
+                client.get_application_source_control(application)
+                for application in applications
+            ]
+        )
+        configured = [entry for entry in results if entry is not None]
+        total += len(configured)
+        if configured:
+            yield configured
+    logger.info(
+        f"Finished source control resync — {total} application(s) with SCM configured"
+    )
 
 
 @ocean.on_start()

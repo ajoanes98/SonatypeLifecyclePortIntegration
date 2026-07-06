@@ -174,3 +174,70 @@ async def test_build_components_with_remediation(client) -> None:  # type: ignor
     assert comp_a["recommendedVersion"] == "3.0.0"
     # component with no security issues should not trigger a remediation call
     client.get_component_remediation.assert_awaited_once()
+
+
+async def test_get_application_source_control_configured(client) -> None:  # type: ignore[no-untyped-def]
+    from unittest.mock import AsyncMock
+
+    client._send_api_request = AsyncMock(
+        return_value={
+            "provider": "github",
+            "repositoryUrl": "https://github.com/ajoanes98/auto-pr-example",
+            "baseBranch": "main",
+            "remediationPullRequestsEnabled": True,
+        }
+    )
+
+    result = await client.get_application_source_control(APPLICATION)
+
+    client._send_api_request.assert_awaited_once_with(
+        "api/v2/sourceControl/application/app-internal-1"
+    )
+    assert result["__identifier"] == "app-internal-1"
+    assert result["__applicationId"] == "app-internal-1"
+    assert result["__githubRepository"] == "ajoanes98/auto-pr-example"
+    assert result["__title"] == "https://github.com/ajoanes98/auto-pr-example"
+    assert result["repositoryUrl"] == "https://github.com/ajoanes98/auto-pr-example"
+
+
+async def test_get_application_source_control_not_configured(client) -> None:  # type: ignore[no-untyped-def]
+    from unittest.mock import AsyncMock
+
+    # _send_api_request already turns a 404 into {} — mirror that here.
+    client._send_api_request = AsyncMock(return_value={})
+
+    result = await client.get_application_source_control(APPLICATION)
+
+    assert result is None
+
+
+async def test_get_application_source_control_strips_token(client) -> None:  # type: ignore[no-untyped-def]
+    from unittest.mock import AsyncMock
+
+    client._send_api_request = AsyncMock(
+        return_value={
+            "provider": "github",
+            "repositoryUrl": "https://github.com/ajoanes98/auto-pr-example",
+            "token": "should-never-reach-the-catalog",
+        }
+    )
+
+    result = await client.get_application_source_control(APPLICATION)
+
+    assert "token" not in result
+
+
+async def test_get_application_source_control_non_github_provider(client) -> None:  # type: ignore[no-untyped-def]
+    from unittest.mock import AsyncMock
+
+    client._send_api_request = AsyncMock(
+        return_value={
+            "provider": "bitbucket",
+            "repositoryUrl": "https://bitbucket.org/ajoanes98/auto-pr-example",
+        }
+    )
+
+    result = await client.get_application_source_control(APPLICATION)
+
+    assert result["__githubRepository"] is None
+    assert result["repositoryUrl"] == "https://bitbucket.org/ajoanes98/auto-pr-example"

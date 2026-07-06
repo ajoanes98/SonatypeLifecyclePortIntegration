@@ -14,3 +14,4 @@ class ObjectKind(StrEnum):
     POLICY_VIOLATION = "policyViolation"
     COMPONENT = "component"
     VULNERABILITY = "vulnerability"
+    SOURCE_CONTROL = "sourceControl"

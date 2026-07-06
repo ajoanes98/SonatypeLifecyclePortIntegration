@@ -8,6 +8,7 @@ from utils import (
     component_version,
     extract_report_id,
     normalize_severity,
+    parse_github_owner_repo,
     pick_remediation_versions,
     severity_from_cvss,
     severity_from_threat_level,
@@ -137,3 +138,23 @@ def test_pick_remediation_versions_empty() -> None:
     picked = pick_remediation_versions([])
     assert picked["recommendedVersion"] is None
     assert picked["recommendedNonFailingVersion"] is None
+
+
+@pytest.mark.parametrize(
+    "repository_url,provider,expected",
+    [
+        ("https://github.com/ajoanes98/auto-pr-example", "github", ("ajoanes98", "auto-pr-example")),
+        ("https://github.com/ajoanes98/auto-pr-example.git", "github", ("ajoanes98", "auto-pr-example")),
+        ("https://github.com/ajoanes98/auto-pr-example/", "github", ("ajoanes98", "auto-pr-example")),
+        ("git@github.com:ajoanes98/auto-pr-example.git", "github", ("ajoanes98", "auto-pr-example")),
+        # Wrong/other provider: never guess, even if the URL happens to be a GitHub one.
+        ("https://github.com/ajoanes98/auto-pr-example", "gitlab", (None, None)),
+        ("https://github.com/ajoanes98/auto-pr-example", None, (None, None)),
+        # Non-GitHub URL with provider=github: no match, no crash.
+        ("https://gitlab.com/ajoanes98/auto-pr-example", "github", (None, None)),
+        (None, "github", (None, None)),
+        ("", "github", (None, None)),
+    ],
+)
+def test_parse_github_owner_repo(repository_url, provider, expected) -> None:
+    assert parse_github_owner_repo(repository_url, provider) == expected
